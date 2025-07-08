@@ -1,116 +1,185 @@
-<!-- 기존 코드 상단 <body> 바로 밑에 아래 div 추가 -->
-<div id="gdrive-area" style="margin-bottom:20px;">
-  <button id="gdrive-login">Google 로그인</button>
-  <button id="gdrive-download">Google Drive에서 불러오기</button>
-  <button id="gdrive-upload">Google Drive로 저장하기</button>
-  <span id="gdrive-status" style="margin-left:10px;color:blue;"></span>
-</div>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>파티매니저 V4 with Google Drive</title>
+  <style>
+    body { font-family: '맑은 고딕', sans-serif; margin:40px; }
+    h2 { margin-top:20px; }
+    #gdrive-area { margin-bottom: 20px; }
+    .party-entry { margin-bottom: 10px; }
+    .action-btn { margin-left: 6px; }
+  </style>
+</head>
+<body>
 
-<!-- 기존 <script> 태그 아래, 제일 마지막에 붙여넣기 -->
-<script src="https://apis.google.com/js/api.js"></script>
-<script>
-const CLIENT_ID = '244004129793-4qv5ggmm7hjfqaf51i8t2qbm8jc6bb5i.apps.googleusercontent.com';
-const API_KEY = 'AIzaSyB116zGemMmcg6AsTzIndk-WRSVatokQt0';
-const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
-const SCOPES = "https://www.googleapis.com/auth/drive.file";
+  <!-- Google Drive 연동 버튼 영역 추가 -->
+  <div id="gdrive-area">
+    <button id="gdrive-login">Google 로그인</button>
+    <button id="gdrive-download">Google Drive에서 불러오기</button>
+    <button id="gdrive-upload">Google Drive로 저장하기</button>
+    <span id="gdrive-status" style="margin-left:10px;color:blue;"></span>
+  </div>
 
-let GoogleAuth;
-let gDriveFileId = "";
+  <h2>파티매니저 V4</h2>
+  <!-- 이하 기존 파티매니저 UI 그대로 복사 (필요한 부분만 예시) -->
+  <div>
+    <!-- 예시 입력, 타임테이블, 등록현황 등 기존 코드 복사해 넣기 -->
+    <label>날짜: <input type="date" id="dateInput" /></label>
+    <button onclick="renderParties()">현황 새로고침</button>
+    <button onclick="copyAll()">전체 복사</button>
+    <button onclick="copySelected()">선택 복사</button>
+    <button onclick="saveFile()">파일 내보내기</button>
+    <button onclick="loadFile()">파일 가져오기</button>
+    <hr>
+    <!-- 타임테이블/직업별 입력 등 UI -->
+    <div id="partyDisplay"></div>
+  </div>
 
-function updateStatus(msg) {
-  document.getElementById("gdrive-status").textContent = msg;
-}
+  <!-- 템플릿 등 추가 UI/설정 -->
+  <div>
+    <h3>템플릿</h3>
+    <textarea id="headerTemplateInput" rows="2" cols="60">#{year}년 {month}월 {day}일 {weekday}\n머릿글</textarea><br>
+    <textarea id="templateInput" rows="6" cols="60"># [{slot}] {time} {missing}\n전사: {전사}\n도적: {도적}\n도가: {도가}\n법사: {법사}\n직자: {직자}</textarea><br>
+    <textarea id="footerTemplateInput" rows="2" cols="60">바닥글</textarea>
+  </div>
 
-function initGAPI() {
-  gapi.load('client:auth2', () => {
-    gapi.client.init({
-      apiKey: API_KEY,
-      clientId: CLIENT_ID,
-      discoveryDocs: DISCOVERY_DOCS,
-      scope: SCOPES
-    }).then(() => {
-      GoogleAuth = gapi.auth2.getAuthInstance();
-      updateStatus(GoogleAuth.isSignedIn.get() ? "Google 인증됨" : "Google 로그인이 필요함");
-    });
-  });
-}
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    // === Google Drive 연동 스크립트 시작 ===
+    const CLIENT_ID = '244004129793-4qv5ggmm7hjfqaf51i8t2qbm8jc6bb5i.apps.googleusercontent.com';
+    const API_KEY = 'AIzaSyB116zGemMmcg6AsTzIndk-WRSVatokQt0';
+    const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
+    const SCOPES = "https://www.googleapis.com/auth/drive.file";
+    let GoogleAuth;
+    let gDriveFileId = "";
 
-document.getElementById("gdrive-login").onclick = () => {
-  if (!GoogleAuth) { alert("API 초기화 대기중"); return; }
-  GoogleAuth.signIn().then(() => updateStatus("Google 인증됨"));
-};
-
-document.getElementById("gdrive-download").onclick = async () => {
-  if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인이 필요합니다"); return; }
-  updateStatus("파일 검색 중...");
-  const res = await gapi.client.drive.files.list({q: "name='party_data.json' and trashed=false"});
-  if (!res.result.files.length) { updateStatus("party_data.json을 찾을 수 없음"); return; }
-  const file = res.result.files[0];
-  gDriveFileId = file.id;
-  const downloadRes = await gapi.client.drive.files.get({fileId: gDriveFileId, alt: "media"});
-  try {
-    const obj = JSON.parse(downloadRes.body);
-    timetables = obj.timetables || {};
-    partyData = obj.partyData || {};
-    if(obj.templates){
-      document.getElementById("headerTemplateInput").value=obj.templates.header||"";
-      document.getElementById("templateInput").value=obj.templates.body||"";
-      document.getElementById("footerTemplateInput").value=obj.templates.footer||"";
+    function updateStatus(msg) {
+      document.getElementById("gdrive-status").textContent = msg;
     }
-    if(obj.lastDate){
-      document.getElementById("dateInput").value=obj.lastDate;
+
+    function initGAPI() {
+      gapi.load('client:auth2', () => {
+        gapi.client.init({
+          apiKey: API_KEY,
+          clientId: CLIENT_ID,
+          discoveryDocs: DISCOVERY_DOCS,
+          scope: SCOPES
+        }).then(() => {
+          GoogleAuth = gapi.auth2.getAuthInstance();
+          updateStatus(GoogleAuth.isSignedIn.get() ? "Google 인증됨" : "Google 로그인이 필요함");
+        });
+      });
     }
-    saveStorage();
-    renderTimetableButtons();
-    renderParties();
-    updateStatus("party_data.json 불러오기 완료!");
-  } catch(e) {
-    updateStatus("party_data.json 파싱 실패!");
-  }
-};
 
-document.getElementById("gdrive-upload").onclick = async () => {
-  if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인이 필요합니다"); return; }
-  updateStatus("Google Drive에 저장 중...");
-  const headerTpl = document.getElementById("headerTemplateInput").value;
-  const bodyTpl   = document.getElementById("templateInput").value;
-  const footerTpl = document.getElementById("footerTemplateInput").value;
-  const lastDate  = document.getElementById("dateInput").value;
-  const exportObj = { timetables, partyData, templates:{header:headerTpl,body:bodyTpl,footer:footerTpl}, lastDate };
-  const content = JSON.stringify(exportObj, null, 2);
+    document.getElementById("gdrive-login").onclick = () => {
+      if (!GoogleAuth) { alert("API 초기화 대기중"); return; }
+      GoogleAuth.signIn().then(() => updateStatus("Google 인증됨"));
+    };
 
-  if (gDriveFileId) {
-    await gapi.client.request({
-      path: `/upload/drive/v3/files/${gDriveFileId}`,
-      method: "PATCH",
-      params: { uploadType: "media" },
-      body: content
-    });
-    updateStatus("party_data.json 업데이트 완료!");
-  } else {
-    const meta = {name:"party_data.json", mimeType:"application/json"};
-    const boundary = '-------314159265358979323846';
-    const delimiter = "\r\n--" + boundary + "\r\n";
-    const close_delim = "\r\n--" + boundary + "--";
-    const multipartRequestBody =
-      delimiter + 'Content-Type: application/json\r\n\r\n' +
-      JSON.stringify(meta) + delimiter +
-      'Content-Type: application/json\r\n\r\n' + content + close_delim;
-    await gapi.client.request({
-      path: '/upload/drive/v3/files',
-      method: 'POST',
-      params: { uploadType: 'multipart' },
-      headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
-      body: multipartRequestBody
-    });
-    updateStatus("party_data.json 새 파일로 업로드됨!");
-  }
-};
+    document.getElementById("gdrive-download").onclick = async () => {
+      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인이 필요합니다"); return; }
+      updateStatus("파일 검색 중...");
+      const res = await gapi.client.drive.files.list({q: "name='party_data.json' and trashed=false"});
+      if (!res.result.files.length) { updateStatus("party_data.json을 찾을 수 없음"); return; }
+      const file = res.result.files[0];
+      gDriveFileId = file.id;
+      const downloadRes = await gapi.client.drive.files.get({fileId: gDriveFileId, alt: "media"});
+      try {
+        const obj = JSON.parse(downloadRes.body);
+        timetables = obj.timetables || {};
+        partyData = obj.partyData || {};
+        if(obj.templates){
+          document.getElementById("headerTemplateInput").value=obj.templates.header||"";
+          document.getElementById("templateInput").value=obj.templates.body||"";
+          document.getElementById("footerTemplateInput").value=obj.templates.footer||"";
+        }
+        if(obj.lastDate){
+          document.getElementById("dateInput").value=obj.lastDate;
+        }
+        saveStorage();
+        renderTimetableButtons();
+        renderParties();
+        updateStatus("party_data.json 불러오기 완료!");
+      } catch(e) {
+        updateStatus("party_data.json 파싱 실패!");
+      }
+    };
 
-window.onload = function() {
-  if(window.loadStorage) loadStorage();
-  if(window.renderTimetableButtons) renderTimetableButtons();
-  if(window.renderParties) renderParties();
-  initGAPI();
-};
-</script>
+    document.getElementById("gdrive-upload").onclick = async () => {
+      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인이 필요합니다"); return; }
+      updateStatus("Google Drive에 저장 중...");
+      const headerTpl = document.getElementById("headerTemplateInput").value;
+      const bodyTpl   = document.getElementById("templateInput").value;
+      const footerTpl = document.getElementById("footerTemplateInput").value;
+      const lastDate  = document.getElementById("dateInput").value;
+      const exportObj = { timetables, partyData, templates:{header:headerTpl,body:bodyTpl,footer:footerTpl}, lastDate };
+      const content = JSON.stringify(exportObj, null, 2);
+
+      if (gDriveFileId) {
+        await gapi.client.request({
+          path: `/upload/drive/v3/files/${gDriveFileId}`,
+          method: "PATCH",
+          params: { uploadType: "media" },
+          body: content
+        });
+        updateStatus("party_data.json 업데이트 완료!");
+      } else {
+        const meta = {name:"party_data.json", mimeType:"application/json"};
+        const boundary = '-------314159265358979323846';
+        const delimiter = "\r\n--" + boundary + "\r\n";
+        const close_delim = "\r\n--" + boundary + "--";
+        const multipartRequestBody =
+          delimiter + 'Content-Type: application/json\r\n\r\n' +
+          JSON.stringify(meta) + delimiter +
+          'Content-Type: application/json\r\n\r\n' + content + close_delim;
+        await gapi.client.request({
+          path: '/upload/drive/v3/files',
+          method: 'POST',
+          params: { uploadType: 'multipart' },
+          headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
+          body: multipartRequestBody
+        });
+        updateStatus("party_data.json 새 파일로 업로드됨!");
+      }
+    };
+
+    // === 기존 파티매니저 JS 코드 (예시) ===
+    // 이 아래에 기존 파티매니저의 timetables, partyData, saveStorage, renderTimetableButtons, renderParties 등
+    // 전체 코드를 기존대로 붙여넣기 해야 완벽하게 동작!
+    // (아래는 예시 변수)
+    let timetables = {};
+    let partyData = {};
+
+    function saveStorage() {
+      // ... 기존 localStorage 저장 코드 ...
+    }
+    function renderTimetableButtons() {
+      // ... 기존 버튼 표시 코드 ...
+    }
+    function renderParties() {
+      // ... 기존 현황 표시 코드 ...
+    }
+    function copyAll() {
+      // ... 전체 복사 코드 ...
+    }
+    function copySelected() {
+      // ... 선택 복사 코드 ...
+    }
+    function saveFile() {
+      // ... 파일 내보내기 코드 ...
+    }
+    function loadFile() {
+      // ... 파일 가져오기 코드 ...
+    }
+    // ================================
+
+    window.onload = function() {
+      if(window.loadStorage) loadStorage();
+      if(window.renderTimetableButtons) renderTimetableButtons();
+      if(window.renderParties) renderParties();
+      initGAPI();
+    };
+  </script>
+</body>
+</html>
