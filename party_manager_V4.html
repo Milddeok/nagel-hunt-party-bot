@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>사냥 파티 관리 (템플릿 즉시 적용)</title>
+  <style>
+    body { font-family: sans-serif; margin:20px; display:flex; gap:20px; flex-wrap:wrap; }
+    .left, .right { flex:1; min-width:300px; }
+    hr { margin:10px 0; }
+    .job-row { margin-bottom:12px; }
+    .job-row label { display:inline-block; width:50px; }
+    .member-inputs input { display:block; margin-bottom:4px; width:60%; padding:4px; }
+    button.qty-btn { width:28px; height:28px; }
+    textarea { width:100%; margin-bottom:8px; }
+    textarea.small { height:60px; }
+    .party-entry { border:1px solid #ccc; padding:10px; margin-bottom:10px; white-space:pre-line; }
+    .entry-checkbox { margin-right:10px; }
+    .action-btn { margin-left:10px; }
+    button.copy-btn { margin:4px; }
+  </style>
+</head>
+<body>
+  <div class="left">
+    <h2>📅 사냥 파티 등록</h2>
+    날짜: <input type="date" id="dateInput"/><hr>
+
+    <strong>⏰ 타임테이블 설정</strong><br>
+    이름: <input id="timetableName"/>  
+    시간: <input id="timetableTime" placeholder="예:16:20~18:20"/><br>
+    <button onclick="addTimetable()">➕ 추가/수정</button>
+    <button onclick="deleteTimetable()">🗑 삭제</button>
+    <div id="timetableButtons"></div><hr>
+
+    <strong>👥 직업별 입력</strong><br>
+    <div class="job-row">
+      <label>전사</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('전사', -1)">−</button>
+      <input type="number" id="전사-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('전사', +1)">＋</button>
+      <div id="전사-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>도적</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('도적', -1)">−</button>
+      <input type="number" id="도적-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('도적', +1)">＋</button>
+      <div id="도적-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>도가</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('도가', -1)">−</button>
+      <input type="number" id="도가-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('도가', +1)">＋</button>
+      <div id="도가-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>법사</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('법사', -1)">−</button>
+      <input type="number" id="법사-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('법사', +1)">＋</button>
+      <div id="법사-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>직자</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('직자', -1)">−</button>
+      <input type="number" id="직자-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('직자', +1)">＋</button>
+      <div id="직자-inputs" class="member-inputs"></div>
+    </div>
+    <hr>
+
+    <strong>📄 템플릿 설정</strong><br>
+    머릿글:<br>
+    <textarea id="headerTemplateInput" class="small">=== {year}년 {month}월 {day}일 ({weekday}) 파티 목록 시작 ===</textarea>
+    본문:<br>
+    <textarea id="templateInput" class="small">🕒 {time}
+전사: {전사}
+도적: {도적}
+도가: {도가}
+법사: {법사}
+직자: {직자}
+총 인원: {total}명
+{missing}</textarea>
+    바닥글:<br>
+    <textarea id="footerTemplateInput" class="small">=== 파티 목록 끝 ===</textarea><br>
+    <!-- 여기에 템플릿 적용 버튼을 추가 -->
+    <button onclick="applyTemplates()">템플릿 적용</button>
+    <button onclick="registerParty()">✅ 등록</button>
+  </div>
+
+  <div class="right">
+    <h2>📋 등록된 파티 현황</h2>
+    <button class="copy-btn" onclick="copyAll()">전체 복사</button>
+    <button class="copy-btn" onclick="copySelected()">선택 복사</button>
+    <textarea id="clipboardPrompt" readonly style="display:none; width:100%; height:60px;"></textarea>
+    <div id="partyDisplay"></div>
+
+    <hr>
+    <div style="margin:10px 0;">
+      <button onclick="downloadData()">📤 파일 내보내기</button>
+      <button onclick="triggerFileInput()">📥 파일 가져오기</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importFromFile(event)"/>
+    </div>
+  </div>
+
+  <script>
+    const jobs = ["전사","도적","도가","법사","직자"];
+    let timetables = {}, partyData = {};
+    const defaultTables = {
+      "1-1":"09:00~11:00","1-2":"11:20~13:20","1-3":"14:00~16:00",
+      "2-1":"16:20~18:20","2-2":"19:00~21:00","2-3":"21:10~21:40","2-4":"23:05~24:05"
+    };
+
+    function loadStorage(){
+      timetables = JSON.parse(localStorage.getItem("timetables")||"null") || {...defaultTables};
+      partyData  = JSON.parse(localStorage.getItem("partyData")||"{}");
+    }
+    function saveStorage(){
+      localStorage.setItem("timetables", JSON.stringify(timetables));
+      localStorage.setItem("partyData",  JSON.stringify(partyData));
+      localStorage.setItem("headerTemplate", document.getElementById("headerTemplateInput").value);
+      localStorage.setItem("bodyTemplate",   document.getElementById("templateInput").value);
+      localStorage.setItem("footerTemplate", document.getElementById("footerTemplateInput").value);
+    }
+
+    function renderTimetableButtons(){
+      const box = document.getElementById("timetableButtons");
+      box.innerHTML = "";
+      Object.keys(timetables).sort().forEach(n => {
+        const b = document.createElement("button");
+        b.textContent = `${n} (${timetables[n]})`;
+        b.onclick = ()=>selectTimetable(n);
+        box.appendChild(b);
+      });
+    }
+
+    function addTimetable(){
+      const n = document.getElementById("timetableName").value.trim();
+      const t = document.getElementById("timetableTime").value.trim();
+      if(!n||!t) return alert("이름·시간을 입력하세요.");
+      timetables[n] = t; saveStorage(); renderTimetableButtons();
+      document.getElementById("timetableName").value = "";
+      document.getElementById("timetableTime").value = "";
+    }
+
+    function deleteTimetable(){
+      const n = document.getElementById("timetableName").value.trim();
+      if(!timetables[n]) return alert("삭제할 타임테이블을 선택하세요.");
+      if(confirm(`${n} 삭제할까요?`)){
+        delete timetables[n]; saveStorage(); renderTimetableButtons();
+        document.getElementById("timetableName").value = "";
+        document.getElementById("timetableTime").value = "";
+      }
+    }
+
+    function selectTimetable(n){
+      document.getElementById("timetableName").value = n;
+      document.getElementById("timetableTime").value = timetables[n];
+      const date = document.getElementById("dateInput").value;
+      if(partyData[date] && partyData[date][n]){
+        const d = partyData[date][n];
+        jobs.forEach(job => {
+          document.getElementById(`${job}-min`).value = d.mins[job];
+          updateJobInputs(job);
+          d.roles[job].forEach((v,i) => {
+            const inp = document.getElementById(`${job}-member-${i}`);
+            if(inp) inp.value = v;
+          });
+        });
+      }
+    }
+
+    function changeMin(job, delta){
+      const inp = document.getElementById(`${job}-min`);
+      let v = parseInt(inp.value,10)||0;
+      v = Math.max(0, v + delta);
+      inp.value = v;
+      updateJobInputs(job);
+    }
+
+    function updateJobInputs(job){
+      const min = parseInt(document.getElementById(`${job}-min`).value,10)||0;
+      const cont = document.getElementById(`${job}-inputs`);
+      const old = Array.from(cont.querySelectorAll("input")).map(i=>i.value);
+      cont.innerHTML = "";
+      for(let i=0; i<min; i++){
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.id = `${job}-member-${i}`;
+        inp.placeholder = `${job} 이름 ${i+1}`;
+        if(old[i]!==undefined) inp.value = old[i];
+        cont.appendChild(inp);
+      }
+    }
+
+    function registerParty(){
+      const date = document.getElementById("dateInput").value;
+      const slot = document.getElementById("timetableName").value.trim();
+      const time = document.getElementById("timetableTime").value.trim();
+      if(!date||!slot||!time) return alert("날짜·이름·시간을 모두 입력하세요.");
+
+      const data = { time, roles:{}, mins:{}, total:0, missing:[] };
+      jobs.forEach(job => {
+        const min = parseInt(document.getElementById(`${job}-min`).value,10)||0;
+        const arr = [];
+        for(let i=0; i<min; i++){
+          arr.push(document.getElementById(`${job}-member-${i}`).value.trim());
+        }
+        data.roles[job] = arr;
+        data.mins[job] = min;
+        const cnt = arr.filter(x=>x).length;
+        data.total += cnt;
+        if(cnt < min) data.missing.push(`${job} (${cnt}/${min})`);
+      });
+
+      if(!partyData[date]) partyData[date] = {};
+      partyData[date][slot] = data;
+      saveStorage();
+      renderParties();
+    }
+
+    function deleteParty(date, slot){
+      if(confirm(`${date} ${slot} 파티 삭제?`)){
+        delete partyData[date][slot];
+        saveStorage();
+        renderParties();
+      }
+    }
+
+    function renderParties(){
+      const cont = document.getElementById("partyDisplay");
+      cont.innerHTML = "";
+      const date = document.getElementById("dateInput").value;
+      if(!date || !partyData[date]) {
+        cont.innerText = "등록된 파티가 없습니다.";
+        return;
+      }
+
+      const [y,mo,day] = date.split("-");
+      const dow = ["일","월","화","수","목","금","토"][new Date(date).getDay()];
+      let hTpl = document.getElementById("headerTemplateInput").value;
+      hTpl = hTpl.replace("{year}", y).replace("{month}", mo).replace("{day}", day).replace("{weekday}", dow);
+      cont.insertAdjacentHTML("beforeend", `<div class="party-entry">${hTpl}</div><hr>`);
+
+      Object.keys(partyData[date]).sort().forEach(slot => {
+        const d = partyData[date][slot];
+        let bTpl = document.getElementById("templateInput").value;
+        bTpl = bTpl.replace("{time}", `${slot} ${d.time}`);
+        jobs.forEach(job => {
+          const disp = d.roles[job].map(n=> n ? `[${n}]` : "[ ]").join("");
+          bTpl = bTpl.replace(`{${job}}`, disp);
+        });
+        bTpl = bTpl.replace("{total}", d.total)
+                   .replace("{missing}", d.missing.length? `#랏 ${d.missing.join(", ")}` : "#완비");
+
+        cont.insertAdjacentHTML("beforeend",
+          `<div class="party-entry">\
+             <input type="checkbox" class="entry-checkbox" checked>\
+             <span class="entry-content">${bTpl.replace(/\n/g,"<br>")}</span>\
+             <button class="action-btn" onclick="deleteParty('${date}','${slot}')">삭제</button>\
+           </div><hr>`
+        );
+      });
+
+      let fTpl = document.getElementById("footerTemplateInput").value;
+      fTpl = fTpl.replace("{year}", y).replace("{month}", mo).replace("{day}", day).replace("{weekday}", dow);
+      cont.insertAdjacentHTML("beforeend", `<div class="party-entry">${fTpl}</div>`);
+
+      renderTimetableButtons();
+    }
+
+    // 템플릿만 즉시 적용
+    function applyTemplates() {
+      saveStorage();
+      renderParties();
+      alert("✅ 템플릿이 적용되었습니다.");
+    }
+
+    function copyAll(){
+      const lines = Array.from(document.querySelectorAll(".party-entry"))
+        .map(div=>{
+          const span = div.querySelector(".entry-content");
+          return span? span.innerText.trim(): div.innerText.trim();
+        }).filter(t=>t);
+      const txt = lines.join("\n");
+      if(!txt) return alert("복사할 내용이 없습니다.");
+      navigator.clipboard.writeText(txt).catch(()=>{
+        const ta=document.getElementById("clipboardPrompt");
+        ta.value=txt; ta.style.display="block"; ta.select();
+        alert("텍스트를 복사하세요.");
+      });
+    }
+
+    function copySelected(){
+      const divs = Array.from(document.querySelectorAll(".party-entry"));
+      if(divs.length<2) return alert("등록된 파티가 없습니다.");
+      const header = divs[0].innerText.trim();
+      const footer = divs[divs.length-1].innerText.trim();
+      const body = Array.from(document.querySelectorAll(".entry-checkbox"))
+        .filter(cb=>cb.checked)
+        .map(cb=>cb.parentElement.querySelector(".entry-content").innerText.trim())
+        .filter(t=>t);
+      if(body.length===0) return alert("선택된 항목이 없습니다.");
+      const txt = [header,...body,footer].join("\n");
+      navigator.clipboard.writeText(txt).catch(()=>{
+        const ta=document.getElementById("clipboardPrompt");
+        ta.value=txt; ta.style.display="block"; ta.select();
+        alert("텍스트를 복사하세요.");
+      });
+    }
+
+    function downloadData(){
+      const headerTpl = document.getElementById("headerTemplateInput").value;
+      const bodyTpl   = document.getElementById("templateInput").value;
+      const footerTpl = document.getElementById("footerTemplateInput").value;
+      const lastDate  = document.getElementById("dateInput").value;
+
+      const exportObj = { timetables, partyData, templates:{header:headerTpl,body:bodyTpl,footer:footerTpl}, lastDate };
+      const str = JSON.stringify(exportObj,null,2);
+      const blob = new Blob([str], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download=`party_data_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+
+    function triggerFileInput(){ document.getElementById("importFile").click(); }
+
+    function importFromFile(evt){
+      const file=evt.target.files[0]; if(!file) return;
+      const reader=new FileReader();
+      reader.onload=e=>{
+        try{
+          const obj=JSON.parse(e.target.result);
+          timetables=obj.timetables||{};
+          partyData=obj.partyData||{};
+          if(obj.templates){
+            document.getElementById("headerTemplateInput").value=obj.templates.header||"";
+            document.getElementById("templateInput").value=obj.templates.body||"";
+            document.getElementById("footerTemplateInput").value=obj.templates.footer||"";
+          }
+          if(obj.lastDate){
+            document.getElementById("dateInput").value=obj.lastDate;
+          }
+          saveStorage();
+          alert("✅ 파일에서 데이터를 복원했습니다.");
+          renderTimetableButtons();
+          renderParties();
+        }catch{
+          alert("❗ 올바른 JSON 파일이 아닙니다.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    window.onload = ()=>{
+      loadStorage();
+      renderTimetableButtons();
+      ["headerTemplateInput","templateInput","footerTemplateInput"].forEach(id=>{
+        const el=document.getElementById(id);
+        const key = id==="templateInput"?"bodyTemplate": id==="headerTemplateInput"?"headerTemplate":"footerTemplate";
+        el.value = localStorage.getItem(key) || el.value;
+        el.addEventListener("input", saveStorage);
+      });
+      const d=document.getElementById("dateInput");
+      d.value = localStorage.getItem("lastDate") || new Date().toISOString().slice(0,10);
+      d.addEventListener("change", ()=>{
+        localStorage.setItem("lastDate", d.value);
+        renderParties();
+      });
+      jobs.forEach(updateJobInputs);
+      renderParties();
+    };
+  </script>
+</body>
+</html>
