@@ -19,15 +19,15 @@
     .action-btn { margin-left:10px; }
     button.copy-btn { margin:4px; }
 
-    /* ⬇⬇⬇ 상단 구글 드라이브 버튼 영역 스타일 */
+    /* Google Drive 버튼 영역 스타일 */
     #gdrive-area {
       display: flex;
       gap: 10px;
       align-items: center;
-      padding: 12px 0 18px 0;
-      border-bottom: 2px solid #e6e6e6;
-      margin-bottom: 26px;
-      background: #fafaff;
+      margin-bottom: 12px;
+      background: none;
+      padding: 0;
+      border: none;
     }
     #gdrive-area button {
       background: #4666cc;
@@ -36,7 +36,6 @@
       border-radius: 6px;
       font-weight: bold;
       padding: 8px 18px;
-      margin-right: 6px;
       cursor: pointer;
       font-size: 1rem;
       box-shadow: 0 2px 6px 0 #0001;
@@ -49,7 +48,7 @@
       color: #3e5db3;
       font-weight: bold;
       margin-left: 12px;
-      min-width: 130px;
+      min-width: 100px;
     }
     @media (max-width: 900px) {
       body { flex-direction: column; }
@@ -60,15 +59,15 @@
 </head>
 <body>
 
-  <!-- Google Drive 연동 버튼 영역 (상단) -->
-  <div id="gdrive-area">
-    <button id="gdrive-login">Google 로그인</button>
-    <button id="gdrive-download">Google Drive에서 불러오기</button>
-    <button id="gdrive-upload">Google Drive로 저장하기</button>
-    <span id="gdrive-status"></span>
-  </div>
-
   <div class="left">
+    <!-- Google Drive 버튼은 '사냥 파티 등록' 제목 바로 위 -->
+    <div id="gdrive-area">
+      <button id="gdrive-login">Google 로그인</button>
+      <button id="gdrive-download">Google Drive에서 불러오기</button>
+      <button id="gdrive-upload">Google Drive로 저장하기</button>
+      <span id="gdrive-status"></span>
+    </div>
+
     <h2>📅 사냥 파티 등록</h2>
     날짜: <input type="date" id="dateInput"/><hr>
 
@@ -158,17 +157,6 @@
   <!-- Google Drive API & 연동 스크립트 -->
   <script src="https://apis.google.com/js/api.js"></script>
   <script>
-    // ... (기존 파티매니저 함수/변수 전체는 원본과 동일하게 아래에 쭉 들어감)
-    const jobs = ["전사","도적","도가","법사","직자"];
-    let timetables = {}, partyData = {};
-    const defaultTables = {
-      "1-1":"09:00~11:00","1-2":"11:20~13:20","1-3":"14:00~16:00",
-      "2-1":"16:20~18:20","2-2":"19:00~21:00","2-3":"21:10~21:40","2-4":"23:05~24:05"
-    };
-    // ... 이하 기존 스크립트 전체 (175번 인덱스 참고) ...
-    // (생략 - 위 원본 스크립트와 동일하게 붙여넣기!)
-
-    // Google Drive 연동 코드 (아래만 추가!)
     const CLIENT_ID = '244004129793-4qv5ggmm7hjfqaf51i8t2qbm8jc6bb5i.apps.googleusercontent.com';
     const API_KEY = 'AIzaSyB116zGemMmcg6AsTzIndk-WRSVatokQt0';
     const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
@@ -189,7 +177,7 @@
           scope: SCOPES
         }).then(() => {
           GoogleAuth = gapi.auth2.getAuthInstance();
-          updateStatus(GoogleAuth.isSignedIn.get() ? "Google 인증됨" : "Google 로그인이 필요함");
+          updateStatus(GoogleAuth.isSignedIn.get() ? "Google 인증됨" : "Google 로그인 필요");
         });
       });
     }
@@ -200,7 +188,7 @@
     };
 
     document.getElementById("gdrive-download").onclick = async () => {
-      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인이 필요합니다"); return; }
+      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인 필요"); return; }
       updateStatus("파일 검색 중...");
       const res = await gapi.client.drive.files.list({q: "name='party_data.json' and trashed=false"});
       if (!res.result.files.length) { updateStatus("party_data.json을 찾을 수 없음"); return; }
@@ -229,11 +217,63 @@
     };
 
     document.getElementById("gdrive-upload").onclick = async () => {
-      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인이 필요합니다"); return; }
+      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) { alert("Google 로그인 필요"); return; }
       updateStatus("Google Drive에 저장 중...");
       const headerTpl = document.getElementById("headerTemplateInput").value;
       const bodyTpl   = document.getElementById("templateInput").value;
       const footerTpl = document.getElementById("footerTemplateInput").value;
       const lastDate  = document.getElementById("dateInput").value;
       const exportObj = { timetables, partyData, templates:{header:headerTpl,body:bodyTpl,footer:footerTpl}, lastDate };
-      const content = J
+      const content = JSON.stringify(exportObj, null, 2);
+
+      if (gDriveFileId) {
+        await gapi.client.request({
+          path: `/upload/drive/v3/files/${gDriveFileId}`,
+          method: "PATCH",
+          params: { uploadType: "media" },
+          body: content
+        });
+        updateStatus("party_data.json 업데이트 완료!");
+      } else {
+        const meta = {name:"party_data.json", mimeType:"application/json"};
+        const boundary = '-------314159265358979323846';
+        const delimiter = "\r\n--" + boundary + "\r\n";
+        const close_delim = "\r\n--" + boundary + "--";
+        const multipartRequestBody =
+          delimiter + 'Content-Type: application/json\r\n\r\n' +
+          JSON.stringify(meta) + delimiter +
+          'Content-Type: application/json\r\n\r\n' + content + close_delim;
+        await gapi.client.request({
+          path: '/upload/drive/v3/files',
+          method: 'POST',
+          params: { uploadType: 'multipart' },
+          headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
+          body: multipartRequestBody
+        });
+        updateStatus("party_data.json 새 파일로 업로드됨!");
+      }
+    };
+
+    window.onload = () => {
+      loadStorage();
+      renderTimetableButtons();
+      ["headerTemplateInput","templateInput","footerTemplateInput"].forEach(id=>{
+        const el=document.getElementById(id);
+        const key = id==="templateInput"?"bodyTemplate": id==="headerTemplateInput"?"headerTemplate":"footerTemplate";
+        el.value = localStorage.getItem(key) || el.value;
+        el.addEventListener("input", saveStorage);
+      });
+      const d=document.getElementById("dateInput");
+      d.value = localStorage.getItem("lastDate") || new Date().toISOString().slice(0,10);
+      d.addEventListener("change", ()=>{
+        localStorage.setItem("lastDate", d.value);
+        renderParties();
+      });
+      jobs.forEach(updateJobInputs);
+      renderParties();
+      // 구글 드라이브 연동 초기화
+      initGAPI();
+    };
+  </script>
+</body>
+</html>
