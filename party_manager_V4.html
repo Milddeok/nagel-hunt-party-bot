@@ -1,52 +1,174 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>파티매니저 V4 with Google Drive</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>사냥 파티 관리 (템플릿 즉시 적용)</title>
   <style>
-    body { font-family: '맑은 고딕', sans-serif; margin:40px; }
-    h2 { margin-top:20px; }
-    #gdrive-area { margin-bottom: 20px; }
-    .party-entry { margin-bottom: 10px; }
-    .action-btn { margin-left: 6px; }
+    body { font-family: sans-serif; margin:20px; display:flex; gap:20px; flex-wrap:wrap; }
+    .left, .right { flex:1; min-width:300px; }
+    hr { margin:10px 0; }
+    .job-row { margin-bottom:12px; }
+    .job-row label { display:inline-block; width:50px; }
+    .member-inputs input { display:block; margin-bottom:4px; width:60%; padding:4px; }
+    button.qty-btn { width:28px; height:28px; }
+    textarea { width:100%; margin-bottom:8px; }
+    textarea.small { height:60px; }
+    .party-entry { border:1px solid #ccc; padding:10px; margin-bottom:10px; white-space:pre-line; }
+    .entry-checkbox { margin-right:10px; }
+    .action-btn { margin-left:10px; }
+    button.copy-btn { margin:4px; }
+
+    /* ⬇⬇⬇ 상단 구글 드라이브 버튼 영역 스타일 */
+    #gdrive-area {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0 18px 0;
+      border-bottom: 2px solid #e6e6e6;
+      margin-bottom: 26px;
+      background: #fafaff;
+    }
+    #gdrive-area button {
+      background: #4666cc;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      padding: 8px 18px;
+      margin-right: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      box-shadow: 0 2px 6px 0 #0001;
+      transition: background 0.2s;
+    }
+    #gdrive-area button:hover {
+      background: #284196;
+    }
+    #gdrive-status {
+      color: #3e5db3;
+      font-weight: bold;
+      margin-left: 12px;
+      min-width: 130px;
+    }
+    @media (max-width: 900px) {
+      body { flex-direction: column; }
+      .left, .right { min-width: unset; }
+      #gdrive-area { flex-wrap: wrap; }
+    }
   </style>
 </head>
 <body>
 
-  <!-- Google Drive 연동 버튼 영역 추가 -->
+  <!-- Google Drive 연동 버튼 영역 (상단) -->
   <div id="gdrive-area">
     <button id="gdrive-login">Google 로그인</button>
     <button id="gdrive-download">Google Drive에서 불러오기</button>
     <button id="gdrive-upload">Google Drive로 저장하기</button>
-    <span id="gdrive-status" style="margin-left:10px;color:blue;"></span>
+    <span id="gdrive-status"></span>
   </div>
 
-  <h2>파티매니저 V4</h2>
-  <!-- 이하 기존 파티매니저 UI 그대로 복사 (필요한 부분만 예시) -->
-  <div>
-    <!-- 예시 입력, 타임테이블, 등록현황 등 기존 코드 복사해 넣기 -->
-    <label>날짜: <input type="date" id="dateInput" /></label>
-    <button onclick="renderParties()">현황 새로고침</button>
-    <button onclick="copyAll()">전체 복사</button>
-    <button onclick="copySelected()">선택 복사</button>
-    <button onclick="saveFile()">파일 내보내기</button>
-    <button onclick="loadFile()">파일 가져오기</button>
+  <div class="left">
+    <h2>📅 사냥 파티 등록</h2>
+    날짜: <input type="date" id="dateInput"/><hr>
+
+    <strong>⏰ 타임테이블 설정</strong><br>
+    이름: <input id="timetableName"/>
+    시간: <input id="timetableTime" placeholder="예:16:20~18:20"/><br>
+    <button onclick="addTimetable()">➕ 추가/수정</button>
+    <button onclick="deleteTimetable()">🗑 삭제</button>
+    <div id="timetableButtons"></div><hr>
+
+    <strong>👥 직업별 입력</strong><br>
+    <div class="job-row">
+      <label>전사</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('전사', -1)">−</button>
+      <input type="number" id="전사-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('전사', +1)">＋</button>
+      <div id="전사-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>도적</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('도적', -1)">−</button>
+      <input type="number" id="도적-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('도적', +1)">＋</button>
+      <div id="도적-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>도가</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('도가', -1)">−</button>
+      <input type="number" id="도가-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('도가', +1)">＋</button>
+      <div id="도가-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>법사</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('법사', -1)">−</button>
+      <input type="number" id="법사-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('법사', +1)">＋</button>
+      <div id="법사-inputs" class="member-inputs"></div>
+    </div>
+    <div class="job-row">
+      <label>직자</label>
+      최소:
+      <button class="qty-btn" onclick="changeMin('직자', -1)">−</button>
+      <input type="number" id="직자-min" value="1" min="0" readonly/>
+      <button class="qty-btn" onclick="changeMin('직자', +1)">＋</button>
+      <div id="직자-inputs" class="member-inputs"></div>
+    </div>
     <hr>
-    <!-- 타임테이블/직업별 입력 등 UI -->
+
+    <strong>📄 템플릿 설정</strong><br>
+    머릿글:<br>
+    <textarea id="headerTemplateInput" class="small">=== {year}년 {month}월 {day}일 ({weekday}) 파티 목록 시작 ===</textarea>
+    본문:<br>
+    <textarea id="templateInput" class="small">🕒 {time}
+전사: {전사}
+도적: {도적}
+도가: {도가}
+법사: {법사}
+직자: {직자}
+총 인원: {total}명
+{missing}</textarea>
+    바닥글:<br>
+    <textarea id="footerTemplateInput" class="small">=== 파티 목록 끝 ===</textarea><br>
+    <button onclick="applyTemplates()">템플릿 적용</button>
+    <button onclick="registerParty()">✅ 등록</button>
+  </div>
+
+  <div class="right">
+    <h2>📋 등록된 파티 현황</h2>
+    <button class="copy-btn" onclick="copyAll()">전체 복사</button>
+    <button class="copy-btn" onclick="copySelected()">선택 복사</button>
+    <textarea id="clipboardPrompt" readonly style="display:none; width:100%; height:60px;"></textarea>
     <div id="partyDisplay"></div>
+
+    <hr>
+    <div style="margin:10px 0;">
+      <button onclick="downloadData()">📤 파일 내보내기</button>
+      <button onclick="triggerFileInput()">📥 파일 가져오기</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importFromFile(event)"/>
+    </div>
   </div>
 
-  <!-- 템플릿 등 추가 UI/설정 -->
-  <div>
-    <h3>템플릿</h3>
-    <textarea id="headerTemplateInput" rows="2" cols="60">#{year}년 {month}월 {day}일 {weekday}\n머릿글</textarea><br>
-    <textarea id="templateInput" rows="6" cols="60"># [{slot}] {time} {missing}\n전사: {전사}\n도적: {도적}\n도가: {도가}\n법사: {법사}\n직자: {직자}</textarea><br>
-    <textarea id="footerTemplateInput" rows="2" cols="60">바닥글</textarea>
-  </div>
-
+  <!-- Google Drive API & 연동 스크립트 -->
   <script src="https://apis.google.com/js/api.js"></script>
   <script>
-    // === Google Drive 연동 스크립트 시작 ===
+    // ... (기존 파티매니저 함수/변수 전체는 원본과 동일하게 아래에 쭉 들어감)
+    const jobs = ["전사","도적","도가","법사","직자"];
+    let timetables = {}, partyData = {};
+    const defaultTables = {
+      "1-1":"09:00~11:00","1-2":"11:20~13:20","1-3":"14:00~16:00",
+      "2-1":"16:20~18:20","2-2":"19:00~21:00","2-3":"21:10~21:40","2-4":"23:05~24:05"
+    };
+    // ... 이하 기존 스크립트 전체 (175번 인덱스 참고) ...
+    // (생략 - 위 원본 스크립트와 동일하게 붙여넣기!)
+
+    // Google Drive 연동 코드 (아래만 추가!)
     const CLIENT_ID = '244004129793-4qv5ggmm7hjfqaf51i8t2qbm8jc6bb5i.apps.googleusercontent.com';
     const API_KEY = 'AIzaSyB116zGemMmcg6AsTzIndk-WRSVatokQt0';
     const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
@@ -114,72 +236,4 @@
       const footerTpl = document.getElementById("footerTemplateInput").value;
       const lastDate  = document.getElementById("dateInput").value;
       const exportObj = { timetables, partyData, templates:{header:headerTpl,body:bodyTpl,footer:footerTpl}, lastDate };
-      const content = JSON.stringify(exportObj, null, 2);
-
-      if (gDriveFileId) {
-        await gapi.client.request({
-          path: `/upload/drive/v3/files/${gDriveFileId}`,
-          method: "PATCH",
-          params: { uploadType: "media" },
-          body: content
-        });
-        updateStatus("party_data.json 업데이트 완료!");
-      } else {
-        const meta = {name:"party_data.json", mimeType:"application/json"};
-        const boundary = '-------314159265358979323846';
-        const delimiter = "\r\n--" + boundary + "\r\n";
-        const close_delim = "\r\n--" + boundary + "--";
-        const multipartRequestBody =
-          delimiter + 'Content-Type: application/json\r\n\r\n' +
-          JSON.stringify(meta) + delimiter +
-          'Content-Type: application/json\r\n\r\n' + content + close_delim;
-        await gapi.client.request({
-          path: '/upload/drive/v3/files',
-          method: 'POST',
-          params: { uploadType: 'multipart' },
-          headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
-          body: multipartRequestBody
-        });
-        updateStatus("party_data.json 새 파일로 업로드됨!");
-      }
-    };
-
-    // === 기존 파티매니저 JS 코드 (예시) ===
-    // 이 아래에 기존 파티매니저의 timetables, partyData, saveStorage, renderTimetableButtons, renderParties 등
-    // 전체 코드를 기존대로 붙여넣기 해야 완벽하게 동작!
-    // (아래는 예시 변수)
-    let timetables = {};
-    let partyData = {};
-
-    function saveStorage() {
-      // ... 기존 localStorage 저장 코드 ...
-    }
-    function renderTimetableButtons() {
-      // ... 기존 버튼 표시 코드 ...
-    }
-    function renderParties() {
-      // ... 기존 현황 표시 코드 ...
-    }
-    function copyAll() {
-      // ... 전체 복사 코드 ...
-    }
-    function copySelected() {
-      // ... 선택 복사 코드 ...
-    }
-    function saveFile() {
-      // ... 파일 내보내기 코드 ...
-    }
-    function loadFile() {
-      // ... 파일 가져오기 코드 ...
-    }
-    // ================================
-
-    window.onload = function() {
-      if(window.loadStorage) loadStorage();
-      if(window.renderTimetableButtons) renderTimetableButtons();
-      if(window.renderParties) renderParties();
-      initGAPI();
-    };
-  </script>
-</body>
-</html>
+      const content = J
